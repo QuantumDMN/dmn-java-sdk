@@ -89,17 +89,38 @@ Use `FeelUtil.contextBuilder()` for ergonomic context creation.
 ```yaml
 quantumdmn:
   base-url: https://api.quantumdmn.com
-  token: ${QUANTUMDMN_TOKEN}  # or use bean below
+  # Option 1: Zitadel Auth (Auto-configured)
+  auth:
+    zitadel:
+      issuer: https://auth.quantumdmn.com
+      key-file: /path/to/service-account.json
+      project-id: your-zitadel-project-id  # Required for audience scope
+
+  # Option 2: Static Token
+  # token: ${QUANTUMDMN_TOKEN}  
 ```
 
-**With dynamic token provider:**
+The SDK will automatically configure the `DmnService` bean with authentication if `quantumdmn.auth.zitadel.key-file` is present.
+You can then simply inject `DmnService` into your components:
+
+```java
+@Service
+public class DecisionService {
+    @Autowired
+    private DmnService dmnService;
+    
+    // ...
+}
+```
+
+**Custom Token Provider:**
+If you need a custom token provider (not Zitadel key file), you can define a bean named `dmnTokenProvider`:
 ```java
 @Configuration
 public class DmnConfig {
-    @Bean
-    @Qualifier("dmnTokenProvider")
-    public Supplier<String> dmnTokenProvider(ZitadelService zitadel) {
-        return () -> zitadel.getAccessToken();
+    @Bean(name = "dmnTokenProvider")
+    public Supplier<String> dmnTokenProvider() {
+        return () -> "my-custom-token";
     }
 }
 ```
@@ -126,7 +147,7 @@ var results = engine.evaluate("decision-xml-id", null, context);
 
 ### Authentication with Zitadel JSON Key (Built-in)
 
-The SDK provides `ZitadelTokenProvider` to authenticate using a Service Account JSON Key file.
+The SDK provides a `ZitadelTokenProvider` helper to authenticate using a JSON Key file.
 
 **Prerequisites:**
 Ensure `jjwt` dependencies are on your classpath (recommended 0.12.x).
@@ -135,14 +156,20 @@ Ensure `jjwt` dependencies are on your classpath (recommended 0.12.x).
 import com.quantumdmn.client.auth.ZitadelTokenProvider;
 
 try {
-    // 1. Create provider from file
-    ZitadelTokenProvider tokenProvider = new ZitadelTokenProvider(
-        "path/to/service-account.json",
-        "https://auth.quantumdmn.com"
-    );
+// Create provider from key file
+// Note: projectId is the Zitadel Project ID (different from DMN Project ID) 
+// used to request project-specific audience and roles.
+ZitadelTokenProvider tokenProvider = new ZitadelTokenProvider(
+    "/path/to/service-account.json", // Path to JSON Key
+    "https://auth.quantumdmn.com",   // Issuer URL
+    "zitadel-project-id"             // Zitadel Project ID (required)
+);
 
-    // 2. Use in DmnService
-    DmnService service = new DmnService("https://api.quantumdmn.com", tokenProvider);
+// Initialize client
+DmnService service = new DmnService(
+    "https://api.quantumdmn.com", // Base URL
+    tokenProvider
+);
     
     // 3. Use Engine
     DmnEngine engine = new DmnEngine(service, "project-uuid");

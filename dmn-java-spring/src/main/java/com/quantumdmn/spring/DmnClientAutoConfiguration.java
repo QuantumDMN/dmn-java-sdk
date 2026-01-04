@@ -1,12 +1,14 @@
 package com.quantumdmn.spring;
 
 import com.quantumdmn.client.DmnService;
+import com.quantumdmn.client.auth.ZitadelTokenProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 
+import java.io.IOException;
 import java.util.function.Supplier;
 
 /**
@@ -22,6 +24,21 @@ import java.util.function.Supplier;
 @EnableConfigurationProperties(DmnClientProperties.class)
 @ConditionalOnProperty(prefix = "quantumdmn", name = "base-url")
 public class DmnClientAutoConfiguration {
+
+    @Bean(name = "dmnTokenProvider")
+    @ConditionalOnMissingBean(name = "dmnTokenProvider")
+    @ConditionalOnProperty(prefix = "quantumdmn.auth.zitadel", name = "key-file")
+    public Supplier<String> zitadelTokenProvider(DmnClientProperties properties) throws IOException {
+        DmnClientProperties.Auth.Zitadel zitadel = properties.getAuth().getZitadel();
+        if (zitadel.getKeyFile() == null || zitadel.getKeyFile().isBlank()) {
+            return null; 
+        }
+        return new ZitadelTokenProvider(
+            zitadel.getKeyFile(),
+            zitadel.getIssuer(),
+            zitadel.getProjectId()
+        );
+    }
 
     /**
      * Creates a DmnService using a custom token provider bean if available.

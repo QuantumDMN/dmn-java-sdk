@@ -5,7 +5,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;
 
+import org.bouncycastle.openssl.PEMParser;
+import org.bouncycastle.openssl.jcajce.JcaPEMKeyConverter;
+
 import java.io.IOException;
+import java.io.StringReader;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
@@ -14,11 +18,8 @@ import java.net.http.HttpResponse;
 import java.net.http.HttpRequest.BodyPublishers;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
-import java.security.KeyFactory;
 import java.security.PrivateKey;
-import java.security.spec.PKCS8EncodedKeySpec;
 import java.time.Instant;
-import java.util.Base64;
 import java.util.Date;
 import java.util.UUID;
 import java.util.function.Supplier;
@@ -37,12 +38,15 @@ public class ZitadelTokenProvider implements Supplier<String> {
     private String cachedToken;
     private Instant tokenExpiry = Instant.MIN;
 
-    public ZitadelTokenProvider(String jsonKeyPath, String issuer) throws IOException {
-        this(Path.of(jsonKeyPath), issuer);
+    private final String projectId;
+
+    public ZitadelTokenProvider(String jsonKeyPath, String issuer, String projectId) throws IOException {
+        this(Path.of(jsonKeyPath), issuer, projectId);
     }
 
-    public ZitadelTokenProvider(Path jsonKeyPath, String issuer) throws IOException {
+    public ZitadelTokenProvider(Path jsonKeyPath, String issuer, String projectId) throws IOException {
         this.issuer = issuer;
+        this.projectId = projectId;
         
         ObjectMapper mapper = new ObjectMapper();
         JsonNode root = mapper.readTree(jsonKeyPath.toFile());
@@ -59,18 +63,26 @@ public class ZitadelTokenProvider implements Supplier<String> {
     }
     
     private PrivateKey parsePrivateKey(String keyPem) {
-        try {
-            String privateKeyContent = keyPem
-                .replace("-----BEGIN PRIVATE KEY-----", "")
-                .replace("-----END PRIVATE KEY-----", "")
-                .replaceAll("\\s", "");
-            
-            byte[] encoded = Base64.getDecoder().decode(privateKeyContent);
-            KeyFactory keyFactory = KeyFactory.getInstance("RSA");
-            PKCS8EncodedKeySpec keySpec = new PKCS8EncodedKeySpec(encoded);
-            return keyFactory.generatePrivate(keySpec);
+        try (PEMParser pemParser = new PEMParser(new StringReader(keyPem))) {
+            Object object = pemParser.readObject();
+            JcaPEMKeyConverter converter = new JcaPEMKeyConverter();
+            return converter.getPrivateKey((org.bouncycastle.asn1.pkcs.PrivateKeyInfo) object);
         } catch (Exception e) {
-            throw new RuntimeException("Failed to parse private key", e);
+            // Try explicit cast to PEMKeyPair for PKCS#1 if needed, or rely on converter matching
+            // Note: BouncyCastle PEMParser often returns PEMKeyPair for PKCS#1 and PrivateKeyInfo for PKCS#8
+             try (PEMParser pemParser = new PEMParser(new StringReader(keyPem))) {
+                 Object object = pemParser.readObject();
+                 JcaPEMKeyConverter converter = new JcaPEMKeyConverter();
+                 if (object instanceof org.bouncycastle.openssl.PEMKeyPair) {
+                     return converter.getPrivateKey(((org.bouncycastle.openssl.PEMKeyPair) object).getPrivateKeyInfo());
+                 } else if (object instanceof org.bouncycastle.asn1.pkcs.PrivateKeyInfo) {
+                     return converter.getPrivateKey((org.bouncycastle.asn1.pkcs.PrivateKeyInfo) object);
+                 } else {
+                     throw new IllegalArgumentException("Unknown key format: " + object.getClass().getName());
+                 }
+             } catch (Exception ex) {
+                 throw new RuntimeException("Failed to parse private key: " + ex.getMessage(), ex);
+             }
         }
     }
 
@@ -99,7 +111,8 @@ public class ZitadelTokenProvider implements Supplier<String> {
             .signWith(privateKey)
             .compact();
 
-        String scope = URLEncoder.encode("openid profile urn:zitadel:iam:user:resourceowner", StandardCharsets.UTF_8);
+        String scope = URLEncoder.encode("openid profile urn:zitadel:iam:user:resourceowner urn:zitadel:iam:org:projects:roles" + 
+                (projectId != null && !projectId.isEmpty() ? " urn:zitadel:iam:org:project:id:" + projectId + ":aud" : ""), StandardCharsets.UTF_8);
         String body = "grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&scope=" + scope + "&assertion=" + jwt;
         
         HttpClient client = HttpClient.newHttpClient();
