@@ -34,15 +34,20 @@ public class DmnEngine {
     }
     
     /**
-     * Evaluates a decision definition by its XML ID with an optional version and context.
+     * Evaluates a decision definition by its XML ID with optional parameters.
      *
      * @param xmlId           The XML definition ID (business key)
-     * @param version         Optional version number (null for latest)
      * @param evaluationContext Map of input variables (FEEL context)
+     * @param options         Optional configuration (version, businessId)
      * @return Map of decision results
      * @throws ApiException if the request fails
      */
-    public Map<String, EvaluationResult> evaluate(String xmlId, Integer version, Map<String, Object> evaluationContext) throws ApiException {
+    public Map<String, EvaluationResult> evaluate(String xmlId, Map<String, Object> evaluationContext, EvaluateOption... options) throws ApiException {
+        EvaluateConfig config = new EvaluateConfig();
+        for (EvaluateOption option : options) {
+            option.apply(config);
+        }
+
         EvaluateStoredRequest request = new EvaluateStoredRequest();
         
         // Convert context to Map<String, FeelValue>
@@ -53,7 +58,31 @@ public class DmnEngine {
             }
         }
         request.setContext(feelCtx);
+        
+        if (config.businessId != null) {
+            request.setBusinessId(config.businessId);
+        }
 
-        return (Map<String, EvaluationResult>) api.evaluateByXMLID(projectId, xmlId, request, version);
+        return (Map<String, EvaluationResult>) api.evaluateByXMLID(projectId, xmlId, request, config.version);
+    }
+    
+    // --- Functional Options ---
+
+    @FunctionalInterface
+    public interface EvaluateOption {
+        void apply(EvaluateConfig config);
+    }
+
+    private static class EvaluateConfig {
+        Integer version = null;
+        String businessId = null;
+    }
+
+    public static EvaluateOption withVersion(int version) {
+        return config -> config.version = version;
+    }
+
+    public static EvaluateOption withBusinessId(String businessId) {
+        return config -> config.businessId = businessId;
     }
 }

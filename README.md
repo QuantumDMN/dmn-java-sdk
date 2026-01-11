@@ -142,7 +142,10 @@ DmnEngine engine = new DmnEngine(service, "project-uuid");
 
 // 3. Evaluate Decision
 Map<String, Object> context = Map.of("age", 25, "income", 50000);
-var results = engine.evaluate("decision-xml-id", null, context);
+var results = engine.evaluate("decision-xml-id", context);
+
+// Or with version:
+// var results = engine.evaluate("decision-xml-id", context, DmnEngine.withVersion(1));
 ```
 
 ### Authentication with Zitadel JSON Key (Built-in)
