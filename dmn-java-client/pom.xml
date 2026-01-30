@@ -94,6 +94,7 @@
                                 <sourceFolder>src/gen/java</sourceFolder>
                                 <dateLibrary>java8</dateLibrary>
                                 <useJakartaEe>true</useJakartaEe>
+                                <openApiNullable>false</openApiNullable>
                             </configOptions>
                             <ignoreFileOverride>${project.basedir}/.openapi-generator-ignore</ignoreFileOverride>
                             <schemaMappings>
