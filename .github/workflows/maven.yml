@@ -13,7 +13,7 @@ on:
 
 jobs:
   build:
-    name: Build Go DMN Web API
+    name: Build QuantumDMN Java SDK
     runs-on: ubuntu-latest
     strategy:
       matrix:
